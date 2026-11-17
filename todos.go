@@ -36,7 +36,7 @@ func (s *TodosService) List(ctx context.Context, p TodoListParams) (*Page[Todo],
 	if p.Completed != nil {
 		q.Set("completed", strconv.FormatBool(*p.Completed))
 	}
-	return list[Todo](ctx, s.c, "/todos", q, p.ListOptions)
+	return list[Todo](ctx, s.c, "todos", q, p.ListOptions)
 }
 
 // All iterates over every todo matching p, fetching pages on demand. Stop early

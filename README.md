@@ -1,9 +1,9 @@
 # jsonplaceholder-sdk
 
-A Go SDK for [JSONPlaceholder](https://jsonplaceholder.typicode.com), the free fake REST API. It is a reference implementation of the design in four posts on [omarcrosby.com](https://omarcrosby.com): small enough to read in one sitting, and complete enough to show every part of an SDK's surface working together. Its one dependency is [go-platform](https://github.com/jedi-knights/go-platform)'s zero-dependency `apperrors` package, so its errors work with services built on go-platform.
+A Go SDK for [JSONPlaceholder](https://jsonplaceholder.typicode.com), the free fake REST API. It is a reference implementation of the design in four posts on [omarcrosby.com](https://omarcrosby.com): small enough to read in one sitting, and complete enough to show every part of an SDK's surface working together. It is instrumented with OpenTelemetry out of the box, and it depends only on the OpenTelemetry API and the zero-dependency `apperrors` package from [go-platform](https://github.com/jedi-knights/go-platform).
 
 <p align="center">
-  <a href="#install">Install</a> · <a href="#quick-start">Quick start</a> · <a href="#resources">Resources</a> · <a href="#paging">Paging</a> · <a href="#errors">Errors</a> · <a href="#retries-and-instrumentation">Retries and instrumentation</a> · <a href="#design">Design</a> · <a href="#development">Development</a>
+  <a href="#install">Install</a> · <a href="#quick-start">Quick start</a> · <a href="#resources">Resources</a> · <a href="#paging">Paging</a> · <a href="#errors">Errors</a> · <a href="#retries-and-instrumentation">Retries and instrumentation</a> · <a href="#observability">Observability</a> · <a href="#design">Design</a> · <a href="#development">Development</a>
 </p>
 
 ## Install
@@ -132,6 +132,60 @@ client, err := jsonplaceholder.NewClient(
 
 `WithBaseURL` points the client at a local [json-server](https://github.com/typicode/json-server) or a test double.
 
+## Observability
+
+The SDK is instrumented with OpenTelemetry **by default**, with nothing to turn on. It uses the OpenTelemetry API only, so it is a no-op until your application installs providers, and it never installs exporters or providers itself. That decision belongs to the application.
+
+| Signal | What you get |
+|---|---|
+| Span | One client span per SDK call, `jsonplaceholder.<resource>.<operation>` (for example `jsonplaceholder.posts.get`), with a child `HTTP GET` span per attempt and a `retry` event for each retry. Failures set the span status, record the error, and add `error.type` and `http.response.status_code`. |
+| Metric | `jsonplaceholder.client.operation_duration` (histogram, seconds), once per SDK call however many attempts it took. |
+| Metric | `jsonplaceholder.client.retries` (counter), once per retry, with `error.type`. |
+| Metric | The standard `http.client.request.duration` family from [otelhttp](https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp), once per attempt. |
+| Propagation | W3C `traceparent` is injected on every attempt, so a trace continues from your caller through the SDK to the service. |
+| Logs | Retry logs use `slog`'s `DebugContext`, so a handler that reads the span from the context adds `trace_id` and `span_id`. |
+
+### Wiring it up with go-platform
+
+[go-platform](https://github.com/jedi-knights/go-platform)'s `otel` package is the application-side bootstrap. Call it once in `main`, and the SDK picks the providers up from the globals:
+
+```go
+obs, err := platformotel.New(ctx, platformotel.Config{ServiceName: "my-service"})
+if err != nil {
+	return err
+}
+defer obs.Shutdown(ctx)
+
+// obs.PromHandler serves /metrics, and OTEL_EXPORTER_OTLP_ENDPOINT selects the trace exporter.
+logger := slog.New(platformotel.NewSpanContextHandler(slog.NewJSONHandler(os.Stderr, nil)))
+client, err := jsonplaceholder.NewClient(jsonplaceholder.WithLogger(logger))
+```
+
+Each SDK call is then a child of whatever span is on the context you pass in.
+
+### Attributes
+
+Operation spans and metrics carry the portfolio's `resource.*` vocabulary from go-platform's `otel/attrs.go` and ADR-0019, so they can be joined to audit and billing events by `resource.path`:
+
+| Attribute | Example |
+|---|---|
+| `resource` | `endpoint:GET /posts/{id}` |
+| `resource.kind` | `endpoint` |
+| `resource.id` | `GET /posts/{id}` (a route template, never a concrete URL, so cardinality stays bounded) |
+| `resource.parent` | `jsonplaceholder` |
+| `resource.path` | `jsonplaceholder/endpoint/GET /posts/{id}` |
+
+### Options
+
+| Option | Purpose |
+|---|---|
+| `WithTracerProvider`, `WithMeterProvider`, `WithPropagators` | Use specific providers instead of the globals, for example to keep the SDK's telemetry separate or to test it. |
+| `WithoutTelemetry` | Turn the SDK's spans, metrics and propagation off and leave your HTTP client untouched. Use it when the client you pass to `WithHTTPClient` is already instrumented with `otelhttp`, or every attempt would be recorded twice. |
+
+### What the SDK does not import from go-platform
+
+go-platform is mostly server-side, and its `otel` package is an application bootstrap. Importing it from a library would add the OpenTelemetry SDK, the OTLP and gRPC exporters and Prometheus, about 240 packages, to every consumer, so the SDK mirrors its attribute key strings and leaves the bootstrap to your `main`. `httpmw`, `httpserver`, `httputil`, `jwtutil`, `audit` and `container` serve HTTP servers and have no use in a client.
+
 ## Design
 
 This SDK follows the series on omarcrosby.com. The table maps each part of the [anatomy post](https://omarcrosby.com/posts/the-anatomy-of-an-sdk-in-go/) to where it lives here.
@@ -143,12 +197,12 @@ This SDK follows the series on omarcrosby.com. The table maps each part of the [
 | Typed requests and responses | `models.go`, `*ListParams` types |
 | Typed errors with a request id | `errors.go` |
 | Pagination as a first-class iterator (`iter.Seq2`) | `pagination.go` |
-| Retries and instrumentation | `retry.go`, `WithRequestHook` |
+| Retries and instrumentation | `retry.go`, `telemetry.go`, `WithRequestHook` |
 | Docs, samples, changelog | `doc.go`, `examples/`, `CHANGELOG.md` |
 
 Graded honestly against the [eight-point rubric](https://omarcrosby.com/posts/what-makes-a-good-sdk/):
 
-- **Met:** reads native in Go, boring auth (there is none), typed errors with a request id, sensible defaults with every knob reachable, pagination as a first-class primitive, docs and runnable samples, honest versioning.
+- **Met:** reads native in Go, boring auth (there is none), typed errors with a request id, sensible defaults with every knob reachable, pagination as a first-class primitive, docs and runnable samples, honest versioning. Beyond the rubric, it ships traces, metrics and propagation by default.
 - **Not applicable:** streaming (the service has none).
 - **Not met:** types are hand-written, not generated from a spec, because JSONPlaceholder publishes no OpenAPI document. With six small resources that is a fair trade; with a large API it would drift.
 

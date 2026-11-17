@@ -30,7 +30,7 @@ func (s *CommentsService) List(ctx context.Context, p CommentListParams) (*Page[
 	if err := setID(q, "postId", p.PostID); err != nil {
 		return nil, err
 	}
-	return list[Comment](ctx, s.c, "/comments", q, p.ListOptions)
+	return list[Comment](ctx, s.c, "comments", q, p.ListOptions)
 }
 
 // All iterates over every comment matching p, fetching pages on demand. Stop early

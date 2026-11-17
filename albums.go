@@ -30,7 +30,7 @@ func (s *AlbumsService) List(ctx context.Context, p AlbumListParams) (*Page[Albu
 	if err := setID(q, "userId", p.UserID); err != nil {
 		return nil, err
 	}
-	return list[Album](ctx, s.c, "/albums", q, p.ListOptions)
+	return list[Album](ctx, s.c, "albums", q, p.ListOptions)
 }
 
 // All iterates over every album matching p, fetching pages on demand. Stop early

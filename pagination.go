@@ -60,14 +60,15 @@ type Page[T any] struct {
 	Total int
 }
 
-// list fetches one page of T from path. q already holds any filters.
-func list[T any](ctx context.Context, c *Client, path string, q url.Values, o ListOptions) (*Page[T], error) {
+// list fetches one page of T from /<collection>. q already holds any filters.
+func list[T any](ctx context.Context, c *Client, collection string, q url.Values, o ListOptions) (*Page[T], error) {
 	if err := o.validate(); err != nil {
 		return nil, err
 	}
 	o.apply(q)
+	op := operation{resource: collection, name: "list", route: "GET /" + collection}
 	var items []T
-	hdr, err := c.get(ctx, path, q, &items)
+	hdr, err := c.get(ctx, op, "/"+collection, q, &items)
 	if err != nil {
 		return nil, err
 	}

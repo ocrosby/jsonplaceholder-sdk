@@ -19,7 +19,7 @@ func (s *UsersService) Get(ctx context.Context, id int) (*User, error) {
 // List returns one page of users. There are only 10, so most callers can pass
 // the zero ListOptions to get them all.
 func (s *UsersService) List(ctx context.Context, o ListOptions) (*Page[User], error) {
-	return list[User](ctx, s.c, "/users", url.Values{}, o)
+	return list[User](ctx, s.c, "users", url.Values{}, o)
 }
 
 // All iterates over every user, fetching pages on demand. o.Limit sets the

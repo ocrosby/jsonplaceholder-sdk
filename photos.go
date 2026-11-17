@@ -31,7 +31,7 @@ func (s *PhotosService) List(ctx context.Context, p PhotoListParams) (*Page[Phot
 	if err := setID(q, "albumId", p.AlbumID); err != nil {
 		return nil, err
 	}
-	return list[Photo](ctx, s.c, "/photos", q, p.ListOptions)
+	return list[Photo](ctx, s.c, "photos", q, p.ListOptions)
 }
 
 // All iterates over every photo matching p, fetching pages on demand. Stop early
