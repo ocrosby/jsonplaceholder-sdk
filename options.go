@@ -8,6 +8,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Retry limits. They are named constants so the bound on every retry loop is
@@ -100,6 +104,56 @@ func WithRequestHook(h RequestHook) Option {
 			return errors.New("jsonplaceholder: request hook must not be nil")
 		}
 		c.hook = h
+		return nil
+	}
+}
+
+// WithTracerProvider sets the OpenTelemetry TracerProvider the SDK's spans are
+// created with. The default is the global provider, which is a no-op until the
+// application installs one. Pass one explicitly to keep the SDK's telemetry
+// separate from the global setup, or in tests.
+func WithTracerProvider(tp trace.TracerProvider) Option {
+	return func(c *Client) error {
+		if tp == nil {
+			return errors.New("jsonplaceholder: tracer provider must not be nil")
+		}
+		c.tracerProvider = tp
+		return nil
+	}
+}
+
+// WithMeterProvider sets the OpenTelemetry MeterProvider the SDK's metrics are
+// created with. The default is the global provider.
+func WithMeterProvider(mp metric.MeterProvider) Option {
+	return func(c *Client) error {
+		if mp == nil {
+			return errors.New("jsonplaceholder: meter provider must not be nil")
+		}
+		c.meterProvider = mp
+		return nil
+	}
+}
+
+// WithPropagators sets the propagator used to inject trace context into
+// outgoing requests. The default is the global propagator, which the
+// application sets (go-platform's otel.New installs W3C TraceContext and Baggage).
+func WithPropagators(p propagation.TextMapPropagator) Option {
+	return func(c *Client) error {
+		if p == nil {
+			return errors.New("jsonplaceholder: propagator must not be nil")
+		}
+		c.propagator = p
+		return nil
+	}
+}
+
+// WithoutTelemetry turns off the SDK's spans, metrics and trace-context
+// propagation, and leaves the HTTP client untouched. Use it when the HTTP
+// client you pass to WithHTTPClient is already instrumented and you do not
+// want every attempt recorded twice.
+func WithoutTelemetry() Option {
+	return func(c *Client) error {
+		c.telemetryOff = true
 		return nil
 	}
 }

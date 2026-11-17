@@ -10,6 +10,10 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -47,6 +51,12 @@ type Client struct {
 	maxRetries int
 	retryBase  time.Duration
 	hook       RequestHook
+
+	tracerProvider trace.TracerProvider
+	meterProvider  metric.MeterProvider
+	propagator     propagation.TextMapPropagator
+	telemetryOff   bool
+	tel            *telemetry
 }
 
 // NewClient builds a Client. With no options it targets DefaultBaseURL, times
@@ -70,6 +80,9 @@ func NewClient(opts ...Option) (*Client, error) {
 			return nil, err
 		}
 	}
+	if err := c.initTelemetry(); err != nil {
+		return nil, err
+	}
 	c.Users = &UsersService{c}
 	c.Posts = &PostsService{c}
 	c.Comments = &CommentsService{c}
@@ -82,10 +95,18 @@ func NewClient(opts ...Option) (*Client, error) {
 // BaseURL returns the base URL requests are sent to, without a trailing slash.
 func (c *Client) BaseURL() string { return c.baseURL }
 
-// get performs a GET with retries and decodes the JSON body into out. It
-// returns the final response headers. The retry loop is bounded by
-// c.maxRetries, which WithRetry caps at MaxRetries.
-func (c *Client) get(ctx context.Context, path string, q url.Values, out any) (http.Header, error) {
+// get performs one SDK call: a GET with retries, decoded into out, wrapped in
+// an operation span. It returns the final response headers. The retry loop is
+// bounded by c.maxRetries, which WithRetry caps at MaxRetries.
+func (c *Client) get(ctx context.Context, op operation, path string, q url.Values, out any) (http.Header, error) {
+	ctx, finish := c.tel.start(ctx, op)
+	hdr, err := c.getWithRetry(ctx, op, path, q, out)
+	finish(err)
+	return hdr, err
+}
+
+// getWithRetry is the retry loop behind get.
+func (c *Client) getWithRetry(ctx context.Context, op operation, path string, q url.Values, out any) (http.Header, error) {
 	target := c.baseURL + path
 	if len(q) > 0 {
 		target += "?" + q.Encode()
@@ -95,7 +116,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values, out any) (h
 		if err == nil {
 			return hdr, nil
 		}
-		if err := c.waitToRetry(ctx, target, attempt, retry, retryAfter, err); err != nil {
+		if err := c.waitToRetry(ctx, op, target, attempt, retry, retryAfter, err); err != nil {
 			return nil, err
 		}
 	}
@@ -105,7 +126,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values, out any) (h
 // sleeping when the caller should try again, and the error to return when it
 // should give up: the context ended, the failure is permanent, or the retry
 // budget is spent.
-func (c *Client) waitToRetry(ctx context.Context, target string, attempt int, retry bool, retryAfter time.Duration, cause error) error {
+func (c *Client) waitToRetry(ctx context.Context, op operation, target string, attempt int, retry bool, retryAfter time.Duration, cause error) error {
 	if cerr := ctx.Err(); cerr != nil {
 		return fmt.Errorf("jsonplaceholder: GET %s: %w", target, cerr)
 	}
@@ -113,7 +134,10 @@ func (c *Client) waitToRetry(ctx context.Context, target string, attempt int, re
 		return cause
 	}
 	delay := backoff(attempt, c.retryBase, retryAfter)
-	c.logger.Debug("jsonplaceholder: retrying", "url", target, "attempt", attempt+1, "delay", delay, "err", cause)
+	// DebugContext, not Debug: a slog handler such as go-platform's
+	// otel.SpanContextHandler reads the span from ctx to add trace_id and span_id.
+	c.logger.DebugContext(ctx, "jsonplaceholder: retrying", "url", target, "attempt", attempt+1, "delay", delay, "err", cause)
+	c.tel.retry(ctx, op, attempt+1, delay, cause)
 	if serr := sleep(ctx, delay); serr != nil {
 		return fmt.Errorf("jsonplaceholder: GET %s: %w", target, serr)
 	}
@@ -161,8 +185,9 @@ func getOne[T any](ctx context.Context, c *Client, collection string, id int) (*
 	if id < 1 {
 		return nil, invalid("id must be 1 or greater, got %d", id)
 	}
+	op := operation{resource: collection, name: "get", route: "GET /" + collection + "/{id}"}
 	var out T
-	if _, err := c.get(ctx, "/"+collection+"/"+strconv.Itoa(id), nil, &out); err != nil {
+	if _, err := c.get(ctx, op, "/"+collection+"/"+strconv.Itoa(id), nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

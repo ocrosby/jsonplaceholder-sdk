@@ -28,6 +28,12 @@
 // strings. Every method takes a context.Context first and honors
 // cancellation, including during backoff.
 //
+// The SDK is instrumented with OpenTelemetry by default: a span per call (with
+// one child span per HTTP attempt), duration and retry metrics, and W3C
+// trace-context propagation. It uses the OpenTelemetry API only, so it is a
+// no-op until the application installs providers. See WithTracerProvider,
+// WithMeterProvider and WithoutTelemetry.
+//
 // Errors carry a go-platform *apperrors.AppError in their chain, so
 // apperrors.IsNotFound(err) works on them.
 //

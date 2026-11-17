@@ -30,7 +30,7 @@ func (s *PostsService) List(ctx context.Context, p PostListParams) (*Page[Post],
 	if err := setID(q, "userId", p.UserID); err != nil {
 		return nil, err
 	}
-	return list[Post](ctx, s.c, "/posts", q, p.ListOptions)
+	return list[Post](ctx, s.c, "posts", q, p.ListOptions)
 }
 
 // All iterates over every post matching p, fetching pages on demand. Stop early
