@@ -97,7 +97,8 @@ if errors.As(err, &apiErr) {
 | `*APIError` | The service answered with a non-200 status | `errors.As`, `IsNotFound`, `IsRateLimited` |
 | `ErrInvalidArgument` | A non-positive id or filter, or a negative page or limit. No request is made. | `errors.Is` |
 | `ErrTooManyPages` | An `All` iterator hit `MaxPages` | `errors.Is` |
-| a wrapped network or decode error | The request never produced a usable response | `errors.Is(err, context.Canceled)` and so on |
+| `ErrInvalidResponse` | The service answered 200 with a body that is not the expected JSON. Not retried. | `errors.Is` |
+| a wrapped network error | The request never reached the service | `errors.Is(err, context.Canceled)` and so on |
 
 JSONPlaceholder sends no request-id header, so `APIError.RequestID` is Cloudflare's `cf-ray` value, which is what a support request can quote.
 

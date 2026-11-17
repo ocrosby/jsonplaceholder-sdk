@@ -312,10 +312,16 @@ func TestTransportErrorsAreNotAPIErrors(t *testing.T) {
 	}
 }
 
-func TestUndecodableBodyIsAnError(t *testing.T) {
-	c := newServer(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`<html>`)) })
-	if _, err := c.Posts.Get(context.Background(), 1); err == nil {
-		t.Error("expected a decode error")
+func TestUndecodableBodyIsErrInvalidResponseAndIsNotRetried(t *testing.T) {
+	var attempts atomic.Int32
+	c := newServer(t, func(w http.ResponseWriter, _ *http.Request) { attempts.Add(1); _, _ = w.Write([]byte(`<html>`)) })
+	_, err := c.Posts.Get(context.Background(), 1)
+	var apiErr *jp.APIError
+	if !errors.Is(err, jp.ErrInvalidResponse) || errors.As(err, &apiErr) {
+		t.Errorf("err = %v, want ErrInvalidResponse and not an APIError", err)
+	}
+	if attempts.Load() != 1 {
+		t.Errorf("attempts = %d, want 1 (a malformed 200 is not transient)", attempts.Load())
 	}
 }
 

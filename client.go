@@ -150,7 +150,7 @@ func (c *Client) attempt(ctx context.Context, target string, out any) (hdr http.
 		}
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(out); err != nil {
-		return nil, false, 0, fmt.Errorf("jsonplaceholder: GET %s: decoding response: %w", target, err)
+		return nil, false, 0, fmt.Errorf("jsonplaceholder: GET %s: %w: %w", target, ErrInvalidResponse, err)
 	}
 	return resp.Header, false, 0, nil
 }

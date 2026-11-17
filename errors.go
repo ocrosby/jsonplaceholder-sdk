@@ -15,6 +15,11 @@ var ErrInvalidArgument = errors.New("jsonplaceholder: invalid argument")
 // the service reporting the end of the collection.
 var ErrTooManyPages = errors.New("jsonplaceholder: exceeded MaxPages while paging")
 
+// ErrInvalidResponse is wrapped by the error returned when the service answers
+// 200 but the body is not the JSON the SDK expected, for example an HTML error
+// page from a proxy. It is not retried. Test for it with errors.Is.
+var ErrInvalidResponse = errors.New("jsonplaceholder: invalid response")
+
 // APIError is returned when the service answers with a non-200 status.
 // Inspect it with errors.As:
 //
