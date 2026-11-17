@@ -1,0 +1,8 @@
+/bin/
+*.test
+*.out
+coverage.out
+.env
+.env.*
+TODO.md
+.DS_Store
