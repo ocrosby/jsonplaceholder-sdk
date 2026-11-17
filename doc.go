@@ -28,5 +28,8 @@
 // strings. Every method takes a context.Context first and honors
 // cancellation, including during backoff.
 //
+// Errors carry a go-platform *apperrors.AppError in their chain, so
+// apperrors.IsNotFound(err) works on them.
+//
 // JSONPlaceholder fakes writes and persists nothing, so this SDK is read-only.
 package jsonplaceholder

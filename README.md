@@ -1,6 +1,6 @@
 # jsonplaceholder-sdk
 
-A Go SDK for [JSONPlaceholder](https://jsonplaceholder.typicode.com), the free fake REST API. It is a reference implementation of the design in four posts on [omarcrosby.com](https://omarcrosby.com): small enough to read in one sitting, and complete enough to show every part of an SDK's surface working together. It has no dependencies outside the Go standard library.
+A Go SDK for [JSONPlaceholder](https://jsonplaceholder.typicode.com), the free fake REST API. It is a reference implementation of the design in four posts on [omarcrosby.com](https://omarcrosby.com): small enough to read in one sitting, and complete enough to show every part of an SDK's surface working together. Its one dependency is [go-platform](https://github.com/jedi-knights/go-platform)'s zero-dependency `apperrors` package, so its errors work with services built on go-platform.
 
 <p align="center">
   <a href="#install">Install</a> · <a href="#quick-start">Quick start</a> · <a href="#resources">Resources</a> · <a href="#paging">Paging</a> · <a href="#errors">Errors</a> · <a href="#retries-and-instrumentation">Retries and instrumentation</a> · <a href="#design">Design</a> · <a href="#development">Development</a>
@@ -101,6 +101,19 @@ if errors.As(err, &apiErr) {
 | a wrapped network error | The request never reached the service | `errors.Is(err, context.Canceled)` and so on |
 
 JSONPlaceholder sends no request-id header, so `APIError.RequestID` is Cloudflare's `cf-ray` value, which is what a support request can quote.
+
+### Errors that work with go-platform
+
+SDK errors carry a go-platform `*apperrors.AppError` in their chain, derived from the HTTP status, so `apperrors.IsNotFound(err)` and `httputil.WriteError(w, err)` work on them without translation. The `*APIError` stays reachable with `errors.As`.
+
+| Status or error | `apperrors` code |
+|---|---|
+| 404 | `NOT_FOUND` |
+| 429 | `RATE_LIMIT` |
+| 401, 403, 409 | `UNAUTHORIZED`, `FORBIDDEN`, `CONFLICT` |
+| any other 4xx, `ErrInvalidArgument` | `BAD_REQUEST` |
+| 502, 503, 504, `ErrInvalidResponse` | `UNAVAILABLE` |
+| any other 5xx, `ErrTooManyPages` | `INTERNAL` |
 
 ## Retries and instrumentation
 
